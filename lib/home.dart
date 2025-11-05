@@ -9,6 +9,7 @@ import 'package:sahabatpknnew/agenda_pkn.dart';
 import 'package:sahabatpknnew/models/news.dart';
 import 'package:sahabatpknnew/services/newsService.dart';
 import 'package:sahabatpknnew/widgets/app_bottom_nav.dart';
+import 'package:sahabatpknnew/debug_api_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -41,7 +42,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
-    _futureNews = ApiService(authToken: '').getNews(_token);
+    _futureNews = ApiService(authToken: _token).getNews(_token);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startBannerAutoScroll();
@@ -50,6 +51,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _reloadNews() {
+    print('🔄 Reloading news...');
     setState(() {
       _futureNews = ApiService(authToken: _token).getNews(_token);
     });
@@ -127,6 +129,12 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.bug_report, color: Colors.white),
+                onPressed: () {
+                  Get.to(() => const DebugApiPage());
+                },
+              ),
               IconButton(
                 icon: const Icon(Icons.notifications_none, color: Colors.white),
                 onPressed: () {},
@@ -469,6 +477,19 @@ class _HomePageState extends State<HomePage> {
 
             // Error
             if (snapshot.hasError) {
+              print('❌ Error in FutureBuilder: ${snapshot.error}');
+
+              String errorMessage = 'Gagal memuat berita.';
+              if (snapshot.error.toString().contains('Failed to fetch') ||
+                  snapshot.error.toString().contains('ClientException')) {
+                errorMessage =
+                    'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda.';
+              } else if (snapshot.error.toString().contains('401')) {
+                errorMessage = 'Token autentikasi tidak valid.';
+              } else if (snapshot.error.toString().contains('timeout')) {
+                errorMessage = 'Koneksi timeout. Coba lagi.';
+              }
+
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Card(
@@ -481,13 +502,15 @@ class _HomePageState extends State<HomePage> {
                         const Icon(Icons.error_outline, color: Colors.red),
                         const SizedBox(height: 8),
                         Text(
-                          'Gagal memuat berita.\n${snapshot.error}',
+                          errorMessage,
                           textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 14),
                         ),
-                        const SizedBox(height: 8),
-                        FilledButton(
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
                           onPressed: _reloadNews,
-                          child: const Text('Coba Lagi'),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Coba Lagi'),
                         ),
                       ],
                     ),
@@ -592,25 +615,27 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ===================== Helpers =====================
-  Widget _buildThumbnail(String? fileName) {
+  Widget _buildThumbnail(String? imageUrl) {
     const fallbackAsset = 'assets/logopkn.png';
 
-    if (fileName == null || fileName.trim().isEmpty) {
+    if (imageUrl == null || imageUrl.trim().isEmpty) {
       return Image.asset(fallbackAsset, fit: BoxFit.cover);
     }
 
-    // kalau API sudah kirim URL lengkap (mulai dengan http)
-    final imageUrl = fileName.startsWith('http')
-        ? fileName
-        : "https://pkn.or.id/assets/img/uploads/berita/$fileName";
+    // Clean up the URL - remove any "../" and fix double slashes
+    String cleanUrl = imageUrl
+        .replaceAll('../', '')
+        .replaceAll('//', '/')
+        .replaceFirst('http:/', 'http://')
+        .replaceFirst('https:/', 'https://');
 
-    debugPrint('imageUrl: $imageUrl'); // lihat di console
+    debugPrint('Loading image: $cleanUrl'); // lihat di console
 
     return Image.network(
-      imageUrl,
+      cleanUrl,
       fit: BoxFit.cover,
       errorBuilder: (_, __, ___) {
-        debugPrint('gagal load gambar: $imageUrl');
+        debugPrint('Gagal load gambar: $cleanUrl');
         return Image.asset(fallbackAsset, fit: BoxFit.cover);
       },
       loadingBuilder: (context, child, progress) {

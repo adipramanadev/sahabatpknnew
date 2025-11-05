@@ -17,7 +17,7 @@ class News {
 
   factory News.fromJson(Map<String, dynamic> j) {
     return News(
-      id: j['id']?.toString(),
+      id: (j['ID'] ?? j['id'])?.toString(),
       seoUrl: j['seo_url'] as String?,
       judul: j['judul'] as String?,
       // fallback ke key lain / kosong
