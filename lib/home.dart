@@ -4,7 +4,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
 import 'package:sahabatpknnew/DetailNewsPage.dart';
 import 'package:sahabatpknnew/pkncenter.dart';
-import 'package:sahabatpknnew/sikap_pkn.dart';
+import 'package:sahabatpknnew/profile_pkn.dart';
 import 'package:sahabatpknnew/agenda_pkn.dart';
 import 'package:sahabatpknnew/models/news.dart';
 import 'package:sahabatpknnew/services/newsService.dart';
@@ -112,18 +112,22 @@ class _HomePageState extends State<HomePage> {
           child: AppBar(
             backgroundColor: Colors.black,
             elevation: 0,
-            centerTitle: true,
+            centerTitle: false,
             titleSpacing: 16,
             title: Row(
               children: [
                 Image.asset('assets/logopkn.png', height: 24),
                 const SizedBox(width: 8),
-                const Text(
-                  'Partai Kebangkitan Nusantara',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.normal,
-                    fontSize: 15.0,
+                Expanded(
+                  child: Text(
+                    'Partai Kebangkitan Nusantara',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.normal,
+                      fontSize: 15.0,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
               ],
@@ -161,11 +165,11 @@ class _HomePageState extends State<HomePage> {
             currentIndex = i;
 
             if (i == 0) {
-              Get.to(() => HomePage());
+              // Already on Home page, do nothing or refresh
             } else if (i == 1) {
-              // Get.to(() => BlankPage());
+              // Get.to(() => BlankPage()); // Kartu page - implement later
             } else if (i == 2) {
-              // klo ada halaaman baru, tambahkan di sini
+              //l
             }
           });
         },
