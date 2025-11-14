@@ -346,7 +346,7 @@ class _HomePageState extends State<HomePage> {
             onPressed: () {
               //menu home
               if (item['label'] == 'Sikap PKN') {
-                Get.to(() => SikapPKN());
+                Get.to(() => const SikapPKN());
               } else if (item['label'] == 'Agenda') {
                 Get.to(() => AgendaPage());
               } else if (item['label'] == 'PKN Center') {

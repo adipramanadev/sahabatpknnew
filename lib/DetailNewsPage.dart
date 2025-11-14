@@ -277,8 +277,7 @@ class _HeaderGradient extends StatelessWidget {
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback? onTap;
-  const _InfoChip({required this.icon, required this.label, this.onTap});
+  const _InfoChip({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
@@ -299,12 +298,7 @@ class _InfoChip extends StatelessWidget {
       ),
     );
 
-    if (onTap == null) return chip;
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: chip,
-    );
+    return chip;
   }
 }
 
