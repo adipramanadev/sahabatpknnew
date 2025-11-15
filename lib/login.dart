@@ -1,11 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-
 import 'package:sahabatpknnew/blankPage.dart';
+import 'package:sahabatpknnew/services/LoginService.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -23,10 +20,17 @@ class _LoginScreenState extends State<LoginScreen>
   bool _loading = false;
   bool _obscure = true;
 
-  late final AnimationController _introCtrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 600),
-  )..forward();
+  late final AnimationController _introCtrl;
+  final LoginService _loginService = LoginService();
+
+  @override
+  void initState() {
+    super.initState();
+    _introCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..forward();
+  }
 
   @override
   void dispose() {
@@ -36,44 +40,33 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
-  Future<String?> _getApiKey() async {
-    // Urutan prioritas:
-    // 1) prefs (kalau sudah pernah diset)
-    // 2) dart-define (flutter run --dart-define=API_KEY=xxx)
-    // 3) null => suruh user set dulu
-    final prefs = await SharedPreferences.getInstance();
-    final saved = prefs.getString('api_key_bearer');
-    if (saved != null && saved.trim().isNotEmpty) return saved.trim();
+  Future<Position?> _ensureLocation() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      _showMsg('Location service dimatikan');
+      return null;
+    }
 
-    const fromEnv = String.fromEnvironment('API_KEY');
-    if (fromEnv.isNotEmpty) return fromEnv;
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
 
-    return null;
+    if (perm != LocationPermission.whileInUse &&
+        perm != LocationPermission.always) {
+      _showMsg('Izin lokasi ditolak');
+      return null;
+    }
+
+    return Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+    );
   }
 
-  // cari token di beberapa kemungkinan key
-  String? _extractToken(Map<String, dynamic> jsonResp) {
-    // root level
-    final rootToken =
-        (jsonResp['token'] ??
-                jsonResp['access_token'] ??
-                jsonResp['auth_token'])
-            ?.toString();
-    if (rootToken != null && rootToken.isNotEmpty) return rootToken;
-
-    // di dalam data
-    final data = jsonResp['data'];
-    if (data is Map) {
-      final t =
-          (data['token'] ??
-                  data['access_token'] ??
-                  data['auth_token'] ??
-                  data['token_bearer'] ??
-                  data['api_key']) // kalau backend menaruhnya di sini
-              ?.toString();
-      if (t != null && t.isNotEmpty) return t;
-    }
-    return null;
+  void _showMsg(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(m)));
   }
 
   Future<void> _login() async {
@@ -83,86 +76,45 @@ class _LoginScreenState extends State<LoginScreen>
 
     setState(() => _loading = true);
 
-    void showMsg(String m) => ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(m)));
-
     try {
-      // Cek izin lokasi singkat (seperti kode kamu)
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        showMsg('Location service dimatikan');
+      // Optional: Get location if needed
+      final pos = await _ensureLocation();
+      if (pos == null) {
         setState(() => _loading = false);
         return;
       }
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied)
-        perm = await Geolocator.requestPermission();
-      if (perm != LocationPermission.whileInUse &&
-          perm != LocationPermission.always) {
-        showMsg('Izin lokasi ditolak');
-        setState(() => _loading = false);
-        return;
-      }
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
+
+      // Call LoginService
+      final result = await _loginService.login(
+        email: _email.text.trim(),
+        password: _password.text,
       );
-
-      // final url = Uri.parse('https://sys.pkn.or.id/api/mobile/auth_login');
-      final url = Uri.parse(
-        'https://pkn.or.id/api/auth_login.php',
-      ); 
-
-      // === MIRROR POSTMAN: form-data + header Bearer ===
-      final req = http.MultipartRequest('POST', url)
-        ..headers['Authorization'] = 'Bearer Xp8b8F8hpfPy6bxK24pjTwt6m'
-        ..headers['Accept'] = 'application/json'
-        ..fields['keylogin'] = _email.text.trim()
-        ..fields['password'] = _password.text
-        ..fields['lat'] = pos.latitude.toString()
-        ..fields['long'] = pos.longitude.toString();
-
-      final streamed = await req.send();
-      final respBody = await streamed.stream.bytesToString();
-
-      if (streamed.statusCode != 200) {
-        showMsg('Server error: ${streamed.statusCode}');
-        // debugPrint(respBody);
-        setState(() => _loading = false);
-        return;
-      }
-
-      final jsonResp = jsonDecode(respBody) as Map<String, dynamic>;
-      if ((jsonResp['status'] ?? '').toString().toLowerCase() != 'success') {
-        showMsg(jsonResp['message']?.toString() ?? 'Login gagal');
-        setState(() => _loading = false);
-        return;
-      }
-
-      // Tidak ada token di respons — simpan profil & API key untuk request berikutnya
-      final data = (jsonResp['data'] as Map?) ?? {};
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('username', (data['username'] ?? '').toString());
-      await prefs.setString('email', (data['email'] ?? '').toString());
-      await prefs.setString('no_ktp', (data['no_ktp'] ?? '').toString());
-      await prefs.setString('kaderID', (data['kaderID'] ?? '').toString());
-      await prefs.setString('status', (data['status'] ?? '').toString());
-      await prefs.setString('api_key_bearer', 'Xp8b8F8hpfPy6bxK24pjTwt6m');
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          transitionDuration: const Duration(milliseconds: 350),
-          pageBuilder: (_, __, ___) => BlankPage(),
-          transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-        ),
-      );
+
+      if (result['success'] == true) {
+        _showMsg(result['message'] ?? 'Login berhasil');
+
+        // Navigate to home page
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 350),
+            pageBuilder: (_, __, ___) => BlankPage(),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+          ),
+        );
+      } else {
+        _showMsg(result['message'] ?? 'Login gagal');
+      }
     } catch (e) {
-      showMsg('Login error: $e');
+      if (mounted) {
+        _showMsg('Login error: $e');
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -194,8 +146,7 @@ class _LoginScreenState extends State<LoginScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header
-                      const Text(
+                      Text(
                         "Login",
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
@@ -207,13 +158,11 @@ class _LoginScreenState extends State<LoginScreen>
                       Text(
                         "Masuk untuk melanjutkan",
                         style: TextStyle(
-                          color: Colors.black.withOpacity(.6),
+                          color: Colors.black.withValues(alpha: 0.6),
                           fontSize: 14,
                         ),
                       ),
                       const SizedBox(height: 28),
-
-                      // Card form dengan animasi halus saat loading
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 250),
                         curve: Curves.easeOut,
@@ -225,7 +174,7 @@ class _LoginScreenState extends State<LoginScreen>
                               ? []
                               : [
                                   BoxShadow(
-                                    color: Colors.black.withOpacity(.04),
+                                    color: Colors.black.withValues(alpha: 0.04),
                                     blurRadius: 16,
                                     offset: const Offset(0, 8),
                                   ),
@@ -241,7 +190,6 @@ class _LoginScreenState extends State<LoginScreen>
                                   AutovalidateMode.onUserInteraction,
                               child: Column(
                                 children: [
-                                  // Email
                                   TextFormField(
                                     controller: _email,
                                     keyboardType: TextInputType.emailAddress,
@@ -263,8 +211,6 @@ class _LoginScreenState extends State<LoginScreen>
                                     },
                                   ),
                                   const SizedBox(height: 12),
-
-                                  // Password
                                   TextFormField(
                                     controller: _password,
                                     obscureText: _obscure,
@@ -288,16 +234,16 @@ class _LoginScreenState extends State<LoginScreen>
                                       ),
                                     ),
                                     validator: (v) {
-                                      if (v == null || v.isEmpty)
+                                      if (v == null || v.isEmpty) {
                                         return 'Password wajib diisi';
-                                      if (v.length < 6)
+                                      }
+                                      if (v.length < 6) {
                                         return 'Minimal 6 karakter';
+                                      }
                                       return null;
                                     },
                                   ),
                                   const SizedBox(height: 20),
-
-                                  // Tombol Login dengan AnimatedSwitcher
                                   SizedBox(
                                     width: double.infinity,
                                     height: 48,
@@ -351,10 +297,7 @@ class _LoginScreenState extends State<LoginScreen>
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 18),
-
-                      // Link Sign Up
                       Center(
                         child: Wrap(
                           crossAxisAlignment: WrapCrossAlignment.center,
@@ -407,7 +350,7 @@ class _LoginScreenState extends State<LoginScreen>
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: const Color(0xffff5630).withOpacity(.6),
+          color: const Color(0xffff5630).withValues(alpha: 153),
           width: 1.2,
         ),
       ),
