@@ -44,6 +44,7 @@ dependencies:
   url_launcher: ^6.3.2
   flutter_widget_from_html: ^0.17.1
   webview_flutter: ^4.13.0
+  http: ^1.1.0
 
 dev_dependencies:
   flutter_test:
